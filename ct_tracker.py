@@ -1,7 +1,7 @@
+import numpy as np
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from data_handling_functions import *
 import gspread
@@ -11,8 +11,10 @@ st.set_page_config(layout="wide")
 
 # Authentication and conection to google docs -> store spreadsheet in the session state
 if "spreadsheet" not in st.session_state:
-    connect_to_docs()
-
+    try:
+        connect_to_docs()
+    except gspread.exceptions.APIError:
+        st.toast("Quota limit reached. Wait for a minute")
 
 # Get the complete plan_df from docs and save it to session state. Only reload, if the docs have been changed
 if "plan_track_df" not in st.session_state:
@@ -141,58 +143,30 @@ fig.update_layout(
 plot_container.plotly_chart(fig, use_container_width=True, theme="streamlit")
 
 
-# @st.fragment(run_every="1s")
-# def next_scan_countdown():
-#     # Get current time
-#     now = datetime.now()
-#
-#     # Get all future planned scan times
-#     plan_df = st.session_state["plan_df"]
-#     future_scans = plan_df[plan_df["datetime"] > now]
-#
-#     # Find the first True in any sample column
-#     next_scan = None
-#     for idx, row in future_scans.iterrows():
-#         for sample in ["Sample1_plan", "Sample2_plan", "Sample3_plan"]:
-#             if row[sample]:
-#                 next_scan = {
-#                     "datetime": row["datetime"],
-#                     "sample": sample.replace("_plan", ""),
-#                 }
-#                 break
-#         if next_scan:
-#             break
-#
-#     alarm_container = st.container(border=True)
-#     if next_scan:
-#         time_diff = next_scan["datetime"] - now
-#         mins, secs = divmod(int(time_diff.total_seconds()), 60)
-#
-#         alarm_container.write(f"""
-#             **Upcoming Scan Alert**
-#             - **Sample:** `{next_scan['sample']}`
-#             - **Scheduled at:** `{next_scan['datetime'].strftime("%H:%M:%S")}`
-#             - **Countdown:** `{mins:02d}:{secs:02d} remaining`
-#         """)
-#     else:
-#         alarm_container.success("✅ No upcoming scans found.")
-#
-# with cols[0]:
-#     next_scan_countdown()
-#
-#
-# with st.expander("Edit Data"):
-#     edited_df = st.data_editor(
-#         st.session_state["track_df"],
-#         use_container_width=True,
-#         disabled=["datetime"],
-#         key="edited_df_key",
-#         hide_index=True,
-#         num_rows = "fixed"
-#     )
-#
-#     if not edited_df.equals(st.session_state["track_df"]):
-#         update = st.button("Update", type="primary")
-#         if update:
-#             st.session_state["track_df"] = edited_df
-#             st.rerun()
+@st.fragment(run_every="1s")
+def next_scan_countdown():
+    # Get current time
+    now = datetime.now()
+
+    # Get all future planned scan times
+    plan_df = st.session_state["plan_track_df"]
+    future_scans = plan_df[plan_df["timestamp"] > now].sort_values("timestamp", ascending=True)
+    next_sample = future_scans["sample"].values[0]
+    next_scan_time = pd.to_datetime(future_scans["timestamp"].values[0])
+
+    alarm_container = st.container(border=True)
+    if next_scan_time:
+        time_diff = next_scan_time - now
+        mins, secs = divmod(int(time_diff.total_seconds()), 60)
+
+        alarm_container.write(f"""
+            #### Next Scan: {next_sample}
+            - **Scheduled: {next_scan_time.strftime("%H:%M:%S (%A)")}**
+            - **Countdown: `{mins:02d}:{secs:02d}` remaining**
+        """)
+    else:
+        alarm_container.success("✅ No upcoming scans found.")
+
+
+next_scan_countdown()
+
