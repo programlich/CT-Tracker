@@ -1,3 +1,5 @@
+import time
+
 import pandas as pd
 from datetime import datetime, timedelta
 import streamlit as st
@@ -22,7 +24,7 @@ def create_plan_df(planned_sample):
     planned_sample_list = ["sample1_plan", "sample2_plan", "sample3_plan", "sample4_plan", "sample5_plan", "sample6_plan", "sample7_plan", "sample8_plan", "sample9_plan"]
 
     if planned_sample not in planned_sample_list:
-        return f"{planned_sample} is an invalid name. Must be one of:\n {planned_sample_list}"
+        st.toast(f"{planned_sample} is an invalid name. Must be one of:\n {planned_sample_list}")
 
     start_time = datetime.now() # Experiment starts now
     initial_scantimes = pd.date_range(start=start_time, periods=5, freq="3min") # First 15min -> scan every 3min
@@ -40,10 +42,11 @@ def create_plan_df(planned_sample):
         sample_worksheet.clear()
         sample_worksheet.update([plan_df.columns.values.tolist()]+plan_df.values.tolist())
         st.session_state["plan_track_df"] = aggregate_plan_and_track_data()
-        return f"Sample plan successfully written to worksheet {planned_sample}"
-
+        st.toast(f"Sample plan successfully written to worksheet {planned_sample}")
+        time.sleep(5)
+        st.rerun()
     else:
-        return f"Data in worksheet {planned_sample} already exists. No data was written"
+        st.toast(f"Data in worksheet {planned_sample} already exists. No data was written")
 
 
 def add_scan_to_track_df(tracked_sample):
@@ -105,12 +108,13 @@ def aggregate_plan_and_track_data():
     # Reshape the df into long format
     long_plan_track_df = plan_track_df.melt(var_name="sample", value_name="timestamp")
 
-    # Split the sample_name into 'sample' and 'source' -> plan/track
-    long_plan_track_df["source"] = long_plan_track_df["sample"].apply(
-        lambda x: "planned" if "_plan" in x else "tracked"
-    )
-    long_plan_track_df["sample"] = long_plan_track_df["sample"].str.replace("_plan", "")
-    long_plan_track_df["sample"] = long_plan_track_df["sample"].str.replace("_track", "")
-    long_plan_track_df.sort_values(by="timestamp", inplace=True)
+    if not long_plan_track_df.empty:
+        # Split the sample_name into 'sample' and 'source' -> plan/track
+        long_plan_track_df["source"] = long_plan_track_df["sample"].apply(
+            lambda x: "planned" if "_plan" in x else "tracked"
+        )
+        long_plan_track_df["sample"] = long_plan_track_df["sample"].str.replace("_plan", "")
+        long_plan_track_df["sample"] = long_plan_track_df["sample"].str.replace("_track", "")
+        long_plan_track_df.sort_values(by="timestamp", inplace=True)
 
     return long_plan_track_df
