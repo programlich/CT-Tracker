@@ -72,7 +72,7 @@ def add_scan_to_track_df(tracked_sample):
 
     return f"{now_string} added to {tracked_sample}"
 
-#@st.cache_data
+@st.cache_data(ttl=60)
 def aggregate_plan_and_track_data():
     spreadsheet = st.session_state["spreadsheet"]
     plan_df = pd.DataFrame()
