@@ -9,14 +9,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 import os
 
 
-def delete_db(connection):
-    if os.path.exists("scans.sqlite"):
-        connection.close()
-        del st.session_state["connection"]
-        if "plan_track_df" in st.session_state:
-            del st.session_state["plan_track_df"]
-        os.remove("scans.sqlite")
-        st.rerun()
+
 
 
 # Connect to local sqlite. Create it if it does not exist
@@ -34,17 +27,17 @@ def establish_db_connection():
 
     return connection
 
+def delete_db(connection):
+    if os.path.exists("scans.sqlite"):
+        connection.close()
+        del st.session_state["connection"]
+        if "plan_track_df" in st.session_state:
+            del st.session_state["plan_track_df"]
+        os.remove("scans.sqlite")
+        st.rerun()
 
 
 
-def connect_to_docs():
-    creds_dict = dict(st.secrets["gcp_service_account"])
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-    client = gspread.authorize(creds)
-    spreadsheet = client.open("CTScanTracker")
-
-    st.session_state["spreadsheet"] = spreadsheet
 
 
 def get_plan_track_table(connection):
@@ -130,6 +123,66 @@ def add_plan_df_to_db(sample, connection):
 
     st.session_state["plan_track_df"] = format_plan_track_table(connection)
     st.rerun()
+
+
+def add_scan_to_db(tracked_sample, connection):
+
+    cursor = connection.cursor()
+    tracked_sample_list = ["sample1_track", "sample2_track", "sample3_track", "sample4_track", "sample5_track", "sample6_track", "sample7_track", "sample8_track", "sample9_track"]
+
+    if tracked_sample not in tracked_sample_list:
+        return f"{tracked_sample} is an invalid name. Must be one of:\n {tracked_sample_list}"
+
+    # Get the current time
+    now = datetime.now()
+    now_string = now.strftime("%d.%m.%Y %H:%M:%S")
+
+    # Add the current time to the samples record worksheet
+    # Step 1: Check if column exists
+    cursor.execute("PRAGMA table_info(plan_track)")
+    existing_columns = [row[1] for row in cursor.fetchall()]
+
+    # Step 2: Add column if it doesn't exist
+    if tracked_sample not in existing_columns:
+        cursor.execute(f"ALTER TABLE plan_track ADD COLUMN {tracked_sample} TEXT")
+        connection.commit()
+
+    # Find first empty row in the column
+    cursor.execute(f"""
+           SELECT rowid FROM plan_track
+           WHERE {tracked_sample} IS NULL
+           ORDER BY rowid ASC
+           LIMIT 1
+       """)
+    row = cursor.fetchone()
+    if row:  # If an empty slot exists
+        rowid = row[0]
+        cursor.execute(f"""
+                UPDATE plan_track SET {tracked_sample} = ?
+                WHERE rowid = ?
+            """, (now_string, rowid))
+    else:  # No empty row — append a new row
+        cursor.execute(f"""
+                INSERT INTO plan_track ({tracked_sample}) VALUES (?)
+            """, (now_string,))
+
+    connection.commit()
+
+    # Reload the plan_track_df
+    st.session_state["plan_track_df"] = format_plan_track_table(connection)
+
+    return f"{now_string} added to {tracked_sample}"
+
+
+
+def connect_to_docs():
+    creds_dict = dict(st.secrets["gcp_service_account"])
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    client = gspread.authorize(creds)
+    spreadsheet = client.open("CTScanTracker")
+
+    st.session_state["spreadsheet"] = spreadsheet
 
 
 def create_plan_df(planned_sample):

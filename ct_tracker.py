@@ -59,7 +59,8 @@ elif selected_sample in started_samples and selected_sample:
     # Add a given point of time to the track_df
     if widget_cols[1].button(f"Add scan to {selected_sample}", type="primary", use_container_width=True):
         try:
-            response = add_scan_to_track_df(f"{selected_sample}_track")
+            # response = add_scan_to_track_df(f"{selected_sample}_track")
+            response = add_scan_to_db(f"{selected_sample}_track", connection)
             st.toast(response)
         except gspread.exceptions.APIError:
             st.toast("Quota limit reached. Wait for a minute")
@@ -190,4 +191,4 @@ if st.button("Delete DB"):
     delete_db(connection)
 
 
-
+st.dataframe(get_plan_track_table(connection))
