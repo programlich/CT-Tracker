@@ -158,7 +158,7 @@ if not plan_track_df.empty:
         next_scan_countdown()
 
 else:
-    plot_container.info("No experiment initialized yet.")
+    countdown_container.info("No experiment initialized yet.")
 
 
 # Show current date and time above the plot

@@ -60,9 +60,9 @@ def format_plan_track_table():
         plan_track_df.drop(columns=["id"], inplace=True)
 
     # Convert values to datetime objects
-    time_format = "%d.%m.%Y %H:%M:%S"
+    time_format = "%d.%m.%Y %H:%M:%S%z"
     for col in plan_track_df.columns:
-        plan_track_df[col] = pd.to_datetime(plan_track_df[col], format=time_format, errors="coerce")
+        plan_track_df[col] = pd.to_datetime(plan_track_df[col], format=time_format, errors="coerce", utc=True).dt.tz_convert("Europe/Berlin")
 
     # Reshape the df into long format
     long_plan_track_df = plan_track_df.melt(var_name="sample", value_name="timestamp")
@@ -112,7 +112,8 @@ def add_plan_df_to_db(sample):
     initial_scantimes = pd.date_range(start=start_time, periods=5, freq="3min") # First 15min -> scan every 3min
     long_term_scantimes = pd.date_range(start=start_time+timedelta(hours=1), periods=24, freq="h")  # after >1h interval = 1h for 24h
     all_scantimes = initial_scantimes.append(long_term_scantimes)
-    plan_times = all_scantimes.strftime("%d.%m.%Y %H:%M:%S").tolist()
+    plan_times = all_scantimes.strftime("%d.%m.%Y %H:%M:%S%z").tolist()
+    st.write(plan_times)
 
     # Write to the db
     # Get the current number of rows in plan_track
@@ -147,7 +148,7 @@ def add_scan_to_db(tracked_sample):
 
     # Get the current time
     now = datetime.now(ZoneInfo("Europe/Berlin"))
-    now_string = now.strftime("%d.%m.%Y %H:%M:%S")
+    now_string = now.strftime("%d.%m.%Y %H:%M:%S%z")
 
     # Add the current time to the samples record worksheet
     # Step 1: Check if column exists
@@ -210,10 +211,10 @@ def next_scan_countdown():
 
     # Get all future planned scan times
     if "plan_track_df" in st.session_state:
-        plan_df = st.session_state["plan_track_df"]
-        future_scans = plan_df[plan_df["timestamp"] > now].sort_values("timestamp", ascending=True)
+        plan_track_df = st.session_state["plan_track_df"]
+        future_scans = plan_track_df[plan_track_df["timestamp"] > now].sort_values("timestamp", ascending=True)
         next_sample = future_scans["sample"].values[0]
-        next_scan_time = pd.to_datetime(future_scans["timestamp"].values[0])
+        next_scan_time = future_scans["timestamp"].iloc[0]
 
         if next_scan_time:
             time_diff = next_scan_time - now
