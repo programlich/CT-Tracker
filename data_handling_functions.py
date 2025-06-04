@@ -9,6 +9,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 import os
 from zoneinfo import ZoneInfo
 
+import samples
 
 
 # Connect to local sqlite. Create it if it does not exist
@@ -210,22 +211,47 @@ def next_scan_countdown():
 
     # Get all future planned scan times
     if "plan_track_df" in st.session_state:
+
         plan_track_df = st.session_state["plan_track_df"]
         future_scans = plan_track_df[plan_track_df["timestamp"] > now].sort_values("timestamp", ascending=True)
         next_sample = future_scans["sample"].values[0]
         next_scan_time = future_scans["timestamp"].iloc[0]
 
+        next_sample_T = samples.samples[next_sample]["T"]
+        next_sample_solution = samples.samples[next_sample]["solution"]
+        next_sample_profile = samples.samples[next_sample]["profile"]
+
         if next_scan_time:
             time_diff = next_scan_time - now
             mins, secs = divmod(int(time_diff.total_seconds()), 60)
 
-            st.write(f"""
-                #### Next Scan: {next_sample}
+            st.write(f"#### Next Scan: {next_sample}")
+            cols = st.columns([0.55, 0.45])
+
+            cols[0].write(f"""
                 - **Scheduled: {next_scan_time.strftime("%H:%M:%S (%A)")}**
                 - **Countdown: `{mins:02d}:{secs:02d}` remaining**
             """)
+
+            cols[1].info(f""" 
+            - T: {next_sample_T}  
+            - Solution: {next_sample_solution}  
+            - Profile: {next_sample_profile}""")
+
         else:
             st.success("✅ No upcoming scans found.")
+
+
+@st.dialog("Upload Backup")
+def upload_backup():
+
+    uploaded_csv = st.file_uploader("Upload backup csv", type="csv", key="file_uploader")
+    if uploaded_csv and uploaded_csv.size>0:
+        connection = establish_db_connection()
+        overwrite_db_with_csv(uploaded_csv, connection)
+        del st.session_state["file_uploader"]
+        connection.close()
+        st.rerun()
 
 
 def connect_to_docs():

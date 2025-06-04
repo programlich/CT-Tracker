@@ -7,6 +7,8 @@ from zoneinfo import ZoneInfo
 from data_handling_functions import *
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+from samples import samples
+
 
 st.set_page_config(layout="wide")
 
@@ -160,19 +162,28 @@ if not plan_track_df.empty:
 else:
     countdown_container.info("No experiment initialized yet.")
 
+st.divider()
 
-# Show current date and time above the plot
-# cols[1].info(f"Date: {future_now.day}.{future_now.month}      Time: {future_now.hour}:{future_now.minute}")
+# Show sample info
+tabs = st.tabs(["Samples", "Data"])
+sample_container = tabs[0].container(border=False)
+sample_cols = sample_container.columns(3)
 
+for i, sample in enumerate(samples):
 
+    # Sample 1
+    sample_cols[i%3].container(border=True).write(f"""##### Sample {i+1}
+    - T: {samples[sample]["T"]}  
+    - Solution: {samples[sample]['solution']}  
+    - Profile: {samples[sample]['profile']}""")
 
-
+# Show all data as dataframe
 unformatted_plan_track_df = get_plan_track_table()
 if "id" in unformatted_plan_track_df.columns:
     unformatted_plan_track_df.drop(columns=["id"], inplace=True)
-st.expander("Data").dataframe(unformatted_plan_track_df, hide_index=True)
+tabs[1].container().dataframe(unformatted_plan_track_df, hide_index=True)
 
-
+# Options to download/upload/delete data
 data_actions_expander = st.expander("Data actions")
 data_action_cols = data_actions_expander.columns(5)
 csv_data = get_plan_track_table().to_csv(index=False)
@@ -180,16 +191,6 @@ data_action_cols[0].download_button("Download Backup",
                                     file_name=f"scans_{datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d_%H-%M-%S")}.csv",
                                     data=csv_data, use_container_width=True)
 
-@st.dialog("Upload Backup")
-def upload_backup():
-
-    uploaded_csv = st.file_uploader("Upload backup csv", type="csv", key="file_uploader")
-    if uploaded_csv and uploaded_csv.size>0:
-        connection = establish_db_connection()
-        overwrite_db_with_csv(uploaded_csv, connection)
-        del st.session_state["file_uploader"]
-        connection.close()
-        st.rerun()
 
 if data_action_cols[1].button("Upload Backup", use_container_width=True):
     upload_backup()
