@@ -1,3 +1,5 @@
+from logging import exception
+
 import numpy as np
 import streamlit as st
 import pandas as pd
@@ -10,15 +12,19 @@ from oauth2client.service_account import ServiceAccountCredentials
 st.set_page_config(layout="wide")
 
 # Authentication and conection to google docs -> store spreadsheet in the session state
-if "spreadsheet" not in st.session_state:
-    connect_to_docs()
+# if "spreadsheet" not in st.session_state:
+#     connect_to_docs()
+if "connection" not in st.session_state:
+    st.session_state["connection"] = establish_db_connection()
+connection = st.session_state["connection"]
 
 # Get the complete plan_df from docs and save it to session state. Only reload, if the docs have been changed
 if "plan_track_df" not in st.session_state:
-    try:
-        st.session_state["plan_track_df"] = aggregate_plan_and_track_data()
-    except gspread.exceptions.APIError:
-        st.toast("Quota limit reached. Wait for a minute")
+    st.session_state["plan_track_df"] = format_plan_track_table(connection)
+    # try:
+    #     st.session_state["plan_track_df"] = aggregate_plan_and_track_data()
+    # except gspread.exceptions.APIError:
+    #     st.toast("Quota limit reached. Wait for a minute")
 
 
 plan_track_df = st.session_state["plan_track_df"]
@@ -39,11 +45,14 @@ widget_cols = widget_container.columns(3, vertical_alignment="bottom")
 if selected_sample not in started_samples and selected_sample:
     if widget_cols[1].button(f"Initialize experiment for {selected_sample} now", type="primary", use_container_width=True):
         try:
-            create_plan_df(f"{selected_sample}_plan")
-        except gspread.exceptions.APIError:
-            st.toast("Quota limit reached. Wait for a minute")
+            add_plan_df_to_db(selected_sample, connection)
+            # create_plan_df(f"{selected_sample}_plan")
+        # except gspread.exceptions.APIError:
+        except Exception as e:
+            # st.toast("Quota limit reached. Wait for a minute")
+            st.toast(e)
 
-elif selected_sample:
+elif selected_sample in started_samples and selected_sample:
     # date = widget_cols[0].date_input("Date", value="2025-06-10", format="DD.MM.YYYY")
     # time = widget_cols[1].time_input("Time", step=60)
 
