@@ -113,7 +113,6 @@ def add_plan_df_to_db(sample):
     long_term_scantimes = pd.date_range(start=start_time+timedelta(hours=1), periods=24, freq="h")  # after >1h interval = 1h for 24h
     all_scantimes = initial_scantimes.append(long_term_scantimes)
     plan_times = all_scantimes.strftime("%d.%m.%Y %H:%M:%S%z").tolist()
-    st.write(plan_times)
 
     # Write to the db
     # Get the current number of rows in plan_track
