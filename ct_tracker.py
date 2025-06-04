@@ -186,6 +186,8 @@ else:
 # Show current date and time above the plot
 # cols[1].info(f"Date: {future_now.day}.{future_now.month}      Time: {future_now.hour}:{future_now.minute}")
 
+if st.button("Delete DB"):
+    delete_db(connection)
 
 
 

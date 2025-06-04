@@ -6,6 +6,17 @@ import streamlit as st
 import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+import os
+
+
+def delete_db(connection):
+    if os.path.exists("scans.sqlite"):
+        connection.close()
+        del st.session_state["connection"]
+        if "plan_track_df" in st.session_state:
+            del st.session_state["plan_track_df"]
+        os.remove("scans.sqlite")
+        st.rerun()
 
 
 # Connect to local sqlite. Create it if it does not exist
