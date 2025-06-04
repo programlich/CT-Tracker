@@ -7,8 +7,7 @@ import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import os
-
-
+from zoneinfo import ZoneInfo
 
 
 
@@ -27,28 +26,34 @@ def establish_db_connection():
 
     return connection
 
-def delete_db(connection):
+@st.dialog("Delete All Data")
+def delete_dialog():
+    st.error("Caution! THIS WILL DELETE ALL DATA! EVERYTHING WILL BE LOST IF YOU DONT HAVE A BACKUP!")
+    st.warning("Proceed?")
+    cols = st.columns([0.8, 0.2])
+    text = st.text_input("Type 'delete all data' to proceed")
+    if text == "delete all data":
+        delete_db()
+
+def delete_db():
     if os.path.exists("scans.sqlite"):
-        connection.close()
-        del st.session_state["connection"]
         if "plan_track_df" in st.session_state:
             del st.session_state["plan_track_df"]
         os.remove("scans.sqlite")
         st.rerun()
 
 
-
-
-
-def get_plan_track_table(connection):
+def get_plan_track_table():
+    connection = establish_db_connection()
     plan_track_df = pd.read_sql("SELECT * FROM plan_track", connection)
-
+    connection.close()
     return  plan_track_df
 
 
-def format_plan_track_table(connection):
+def format_plan_track_table():
+    connection = establish_db_connection()
 
-    plan_track_df = get_plan_track_table(connection)
+    plan_track_df = get_plan_track_table()
 
     # Drop the id col, if it exists
     if "id" in plan_track_df.columns:
@@ -71,12 +76,13 @@ def format_plan_track_table(connection):
         long_plan_track_df["sample"] = long_plan_track_df["sample"].str.replace("_track", "")
         long_plan_track_df.sort_values(by="timestamp", inplace=True)
 
+    connection.close()
     return long_plan_track_df
 
 
 # Add a plan_df to the db as a new column
-def add_plan_df_to_db(sample, connection):
-
+def add_plan_df_to_db(sample):
+    connection = establish_db_connection()
     planned_sample = f"{sample}_plan"
 
     cursor = connection.cursor()
@@ -85,6 +91,7 @@ def add_plan_df_to_db(sample, connection):
 
     if planned_sample not in planned_sample_list:
         st.toast(f"{planned_sample} is an invalid name. Must be one of:\n {planned_sample_list}")
+        connection.close()
         return
 
     # Create empty column for planned_sample
@@ -94,12 +101,14 @@ def add_plan_df_to_db(sample, connection):
     except sqlite3.OperationalError as e:
         if "duplicate column name" in str(e):
             st.toast(f"Column for {planned_sample} already exists. No data was written")
+            connection.close()
             return
         else:
+            connection.close()
             raise e
 
     # Define the scantimes
-    start_time = datetime.now() # Experiment starts now
+    start_time = datetime.now(ZoneInfo("Europe/Berlin")) # Experiment starts now
     initial_scantimes = pd.date_range(start=start_time, periods=5, freq="3min") # First 15min -> scan every 3min
     long_term_scantimes = pd.date_range(start=start_time+timedelta(hours=1), periods=24, freq="h")  # after >1h interval = 1h for 24h
     all_scantimes = initial_scantimes.append(long_term_scantimes)
@@ -121,20 +130,23 @@ def add_plan_df_to_db(sample, connection):
         cursor.execute(f"UPDATE plan_track SET {planned_sample} = ? WHERE rowid = ?", (time, i+1))
     connection.commit()
 
-    st.session_state["plan_track_df"] = format_plan_track_table(connection)
+    st.session_state["plan_track_df"] = format_plan_track_table()
+
+    connection.close()
     st.rerun()
 
 
-def add_scan_to_db(tracked_sample, connection):
-
+def add_scan_to_db(tracked_sample):
+    connection = establish_db_connection()
     cursor = connection.cursor()
     tracked_sample_list = ["sample1_track", "sample2_track", "sample3_track", "sample4_track", "sample5_track", "sample6_track", "sample7_track", "sample8_track", "sample9_track"]
 
     if tracked_sample not in tracked_sample_list:
+        connection.close()
         return f"{tracked_sample} is an invalid name. Must be one of:\n {tracked_sample_list}"
 
     # Get the current time
-    now = datetime.now()
+    now = datetime.now(ZoneInfo("Europe/Berlin"))
     now_string = now.strftime("%d.%m.%Y %H:%M:%S")
 
     # Add the current time to the samples record worksheet
@@ -169,10 +181,51 @@ def add_scan_to_db(tracked_sample, connection):
     connection.commit()
 
     # Reload the plan_track_df
-    st.session_state["plan_track_df"] = format_plan_track_table(connection)
-
+    st.session_state["plan_track_df"] = format_plan_track_table()
+    connection.close()
     return f"{now_string} added to {tracked_sample}"
 
+
+def overwrite_db_with_csv(uploaded_file, connection):
+    if uploaded_file is not None:
+        try:
+            # 1. Read CSV to DataFrame
+            df = pd.read_csv(uploaded_file)
+
+            # 2. Overwrite plan_track table with the DataFrame
+            df.to_sql("plan_track", connection, if_exists="replace", index=False)
+
+            st.toast("CSV imported successfully and plan_track table overwritten.")
+            # Reload the plan_track_df
+            st.session_state["plan_track_df"] = format_plan_track_table()
+
+        except Exception as e:
+            st.toast(f"Failed to import CSV: {e}")
+
+
+@st.fragment(run_every="1s")
+def next_scan_countdown():
+    # Get current time
+    now = datetime.now(ZoneInfo("Europe/Berlin"))
+
+    # Get all future planned scan times
+    if "plan_track_df" in st.session_state:
+        plan_df = st.session_state["plan_track_df"]
+        future_scans = plan_df[plan_df["timestamp"] > now].sort_values("timestamp", ascending=True)
+        next_sample = future_scans["sample"].values[0]
+        next_scan_time = pd.to_datetime(future_scans["timestamp"].values[0])
+
+        if next_scan_time:
+            time_diff = next_scan_time - now
+            mins, secs = divmod(int(time_diff.total_seconds()), 60)
+
+            st.write(f"""
+                #### Next Scan: {next_sample}
+                - **Scheduled: {next_scan_time.strftime("%H:%M:%S (%A)")}**
+                - **Countdown: `{mins:02d}:{secs:02d}` remaining**
+            """)
+        else:
+            st.success("✅ No upcoming scans found.")
 
 
 def connect_to_docs():
@@ -193,7 +246,7 @@ def create_plan_df(planned_sample):
     if planned_sample not in planned_sample_list:
         st.toast(f"{planned_sample} is an invalid name. Must be one of:\n {planned_sample_list}")
 
-    start_time = datetime.now() # Experiment starts now
+    start_time = datetime.now(ZoneInfo("Europe/Berlin")) # Experiment starts now
     initial_scantimes = pd.date_range(start=start_time, periods=5, freq="3min") # First 15min -> scan every 3min
     long_term_scantimes = pd.date_range(start=start_time+timedelta(hours=1), periods=24, freq="h")  # after >1h interval = 1h for 24h
     all_scantimes = initial_scantimes.append(long_term_scantimes)
@@ -225,7 +278,7 @@ def add_scan_to_track_df(tracked_sample):
         return f"{tracked_sample} is an invalid name. Must be one of:\n {tracked_sample_list}"
 
     # Get the current time
-    now = datetime.now()
+    now = datetime.now(ZoneInfo("Europe/Berlin"))
     now_string = now.strftime("%d.%m.%Y %H:%M:%S")
 
     # Add the current time to the samples record worksheet

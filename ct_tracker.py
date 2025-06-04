@@ -1,26 +1,28 @@
-from logging import exception
-
 import numpy as np
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from data_handling_functions import *
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
 st.set_page_config(layout="wide")
 
+
 # Authentication and conection to google docs -> store spreadsheet in the session state
 # if "spreadsheet" not in st.session_state:
 #     connect_to_docs()
-if "connection" not in st.session_state:
-    st.session_state["connection"] = establish_db_connection()
-connection = st.session_state["connection"]
+# if "connection" not in st.session_state:
+#     st.session_state["connection"] = establish_db_connection()
+# connection = st.session_state["connection"]
+
+
 
 # Get the complete plan_df from docs and save it to session state. Only reload, if the docs have been changed
 if "plan_track_df" not in st.session_state:
-    st.session_state["plan_track_df"] = format_plan_track_table(connection)
+    st.session_state["plan_track_df"] = format_plan_track_table()
     # try:
     #     st.session_state["plan_track_df"] = aggregate_plan_and_track_data()
     # except gspread.exceptions.APIError:
@@ -36,16 +38,18 @@ else:
     started_samples = []
 
 plot_container = st.container()
-widget_container = st.container(border=True)
-selected_sample = widget_container.pills("Sample", options=["sample1", "sample2", "sample3", "sample4", "sample5", "sample6",
+widget_cols = st.columns(2)
+sample_container = widget_cols[0].container(border=True)
+countdown_container = widget_cols[1].container(border=True)
+selected_sample = sample_container.pills("Sample", options=["sample1", "sample2", "sample3", "sample4", "sample5", "sample6",
                                                    "sample7", "sample8", "sample9"], selection_mode="single", )
-widget_cols = widget_container.columns(3, vertical_alignment="bottom")
+# widget_cols = sample_container.columns(1, vertical_alignment="bottom")
 
 # Handle non initialized samples
 if selected_sample not in started_samples and selected_sample:
-    if widget_cols[1].button(f"Initialize experiment for {selected_sample} now", type="primary", use_container_width=True):
+    if sample_container.button(f"Initialize experiment for {selected_sample} now", type="primary", use_container_width=True):
         try:
-            add_plan_df_to_db(selected_sample, connection)
+            add_plan_df_to_db(selected_sample)
             # create_plan_df(f"{selected_sample}_plan")
         # except gspread.exceptions.APIError:
         except Exception as e:
@@ -57,10 +61,10 @@ elif selected_sample in started_samples and selected_sample:
     # time = widget_cols[1].time_input("Time", step=60)
 
     # Add a given point of time to the track_df
-    if widget_cols[1].button(f"Add scan to {selected_sample}", type="primary", use_container_width=True):
+    if sample_container.button(f"Add scan to {selected_sample}", type="primary", use_container_width=True):
         try:
             # response = add_scan_to_track_df(f"{selected_sample}_track")
-            response = add_scan_to_db(f"{selected_sample}_track", connection)
+            response = add_scan_to_db(f"{selected_sample}_track")
             st.toast(response)
         except gspread.exceptions.APIError:
             st.toast("Quota limit reached. Wait for a minute")
@@ -104,7 +108,7 @@ if not plan_track_df.empty:
     )
 
     # Add time indicator with red horizontal line
-    now = datetime.now()
+    now = datetime.now(ZoneInfo("Europe/Berlin"))
     fig.add_shape(
         type="line",
         x0=now,
@@ -150,35 +154,8 @@ if not plan_track_df.empty:
     # Show the plot
     plot_container.plotly_chart(fig, use_container_width=True, theme="streamlit")
 
-
-    @st.fragment(run_every="1s")
-    def next_scan_countdown():
-        # Get current time
-        now = datetime.now()
-
-        # Get all future planned scan times
-        plan_df = st.session_state["plan_track_df"]
-        future_scans = plan_df[plan_df["timestamp"] > now].sort_values("timestamp", ascending=True)
-        next_sample = future_scans["sample"].values[0]
-        next_scan_time = pd.to_datetime(future_scans["timestamp"].values[0])
-
-        alarm_container = st.container(border=True)
-        if next_scan_time:
-            time_diff = next_scan_time - now
-            mins, secs = divmod(int(time_diff.total_seconds()), 60)
-
-            alarm_container.write(f"""
-                #### Next Scan: {next_sample}
-                - **Scheduled: {next_scan_time.strftime("%H:%M:%S (%A)")}**
-                - **Countdown: `{mins:02d}:{secs:02d}` remaining**
-            """)
-        else:
-            alarm_container.success("✅ No upcoming scans found.")
-
-
-    next_scan_countdown()
-
-
+    with countdown_container:
+        next_scan_countdown()
 
 else:
     plot_container.info("No experiment initialized yet.")
@@ -187,8 +164,35 @@ else:
 # Show current date and time above the plot
 # cols[1].info(f"Date: {future_now.day}.{future_now.month}      Time: {future_now.hour}:{future_now.minute}")
 
-if st.button("Delete DB"):
-    delete_db(connection)
 
 
-st.dataframe(get_plan_track_table(connection))
+
+unformatted_plan_track_df = get_plan_track_table()
+if "id" in unformatted_plan_track_df.columns:
+    unformatted_plan_track_df.drop(columns=["id"], inplace=True)
+st.expander("Data").dataframe(unformatted_plan_track_df, hide_index=True)
+
+
+data_actions_expander = st.expander("Data actions")
+data_action_cols = data_actions_expander.columns(5)
+csv_data = get_plan_track_table().to_csv(index=False)
+data_action_cols[0].download_button("Download Backup",
+                                    file_name=f"scans_{datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d_%H-%M-%S")}.csv",
+                                    data=csv_data, use_container_width=True)
+
+@st.dialog("Upload Backup")
+def upload_backup():
+
+    uploaded_csv = st.file_uploader("Upload backup csv", type="csv", key="file_uploader")
+    if uploaded_csv and uploaded_csv.size>0:
+        connection = establish_db_connection()
+        overwrite_db_with_csv(uploaded_csv, connection)
+        del st.session_state["file_uploader"]
+        connection.close()
+        st.rerun()
+
+if data_action_cols[1].button("Upload Backup", use_container_width=True):
+    upload_backup()
+
+if data_action_cols[4].button("Delete All Data", use_container_width=True):
+    delete_dialog()
