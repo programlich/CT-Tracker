@@ -8,29 +8,33 @@ from data_handling_functions import *
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from samples import samples
-
+import streamlit_authenticator as stauth
+import yaml
+from yaml.loader import SafeLoader
 
 st.set_page_config(layout="wide")
 
+# Login functionality
+with open('.streamlit/users.yaml') as file:
+    config = yaml.load(file, Loader=SafeLoader)
 
-# Authentication and conection to google docs -> store spreadsheet in the session state
-# if "spreadsheet" not in st.session_state:
-#     connect_to_docs()
-# if "connection" not in st.session_state:
-#     st.session_state["connection"] = establish_db_connection()
-# connection = st.session_state["connection"]
+authenticator = stauth.Authenticate(
+    config['credentials'],
+    config['cookie']['name'],
+    config['cookie']['key'],
+    config['cookie']['expiry_days'],
+)
 
-
+if st.session_state["authentication_status"] is None:
+    try:
+        authenticator.login()
+    except Exception as e:
+        st.error(e)
+    st.stop()
 
 # Get the complete plan_df from docs and save it to session state. Only reload, if the docs have been changed
 if "plan_track_df" not in st.session_state:
     st.session_state["plan_track_df"] = format_plan_track_table()
-    # try:
-    #     st.session_state["plan_track_df"] = aggregate_plan_and_track_data()
-    # except gspread.exceptions.APIError:
-    #     st.toast("Quota limit reached. Wait for a minute")
-
-
 plan_track_df = st.session_state["plan_track_df"]
 
 if not plan_track_df.empty:
@@ -39,6 +43,7 @@ if not plan_track_df.empty:
 else:
     started_samples = []
 
+# Widgets
 plot_container = st.container()
 widget_cols = st.columns(2)
 sample_container = widget_cols[0].container(border=True)
