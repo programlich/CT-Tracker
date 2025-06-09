@@ -8,7 +8,6 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import os
 from zoneinfo import ZoneInfo
-
 import samples
 
 
@@ -85,6 +84,7 @@ def format_plan_track_table():
 def add_plan_df_to_db(sample):
     connection = establish_db_connection()
     planned_sample = f"{sample}_plan"
+    sample_info = samples.samples[sample]
 
     cursor = connection.cursor()
 
@@ -108,10 +108,17 @@ def add_plan_df_to_db(sample):
             connection.close()
             raise e
 
+    # Get information about this sample from samples.py
+    duration = sample_info["duration"]
+    if "inital_repetitions" in sample_info:
+        initial_reps = sample_info["inital_repetitions"]
+    else:
+        initial_reps = 1
+
     # Define the scantimes
     start_time = datetime.now(ZoneInfo("Europe/Berlin")) # Experiment starts now
-    initial_scantimes = pd.date_range(start=start_time, periods=5, freq="3min") # First 15min -> scan every 3min
-    long_term_scantimes = pd.date_range(start=start_time+timedelta(hours=1), periods=24, freq="h")  # after >1h interval = 1h for 24h
+    initial_scantimes = pd.date_range(start=start_time, periods=initial_reps, freq="20min") # First 15min -> scan every 3min
+    long_term_scantimes = pd.date_range(start=start_time+timedelta(hours=1), periods=duration, freq="h")  # after >1h interval = 1h for 24h
     all_scantimes = initial_scantimes.append(long_term_scantimes)
     plan_times = all_scantimes.strftime("%d.%m.%Y %H:%M:%S%z").tolist()
 
