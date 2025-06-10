@@ -245,6 +245,9 @@ def next_scan_countdown():
             - Solution: {next_sample_solution}  
             - Profile: {next_sample_profile}""")
 
+            if (mins <= 5) and (mins >=4) and (secs%5 == 0):
+                st.balloons()
+
         else:
             st.success("✅ No upcoming scans found.")
 
