@@ -296,7 +296,8 @@ def format_sag_df(sag_df):
         )
 
         if not long_sag_df.empty:
-            long_sag_df["source"] = long_sag_df["source"].apply(lambda s: "planned" if "target" in s else "tracked" if "is" in s else None)
+            long_sag_df["source"] = long_sag_df["source"].apply(lambda s: "end" if "end" in s else "planned" if "target" in s else "start" if "start" in s else None
+)
 
             # # Split the sample_name into 'sample' and 'source' -> plan/track
             # long_sag_df["source"] = long_sag_df["sample"].apply(

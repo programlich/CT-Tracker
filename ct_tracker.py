@@ -154,10 +154,11 @@ if not long_sag_df.empty:
     # "tracked": "#2ecc71"  # greenish
     #    },
     #                  symbol="source", )
-    fig = px.scatter(long_sag_df, x="timestamp", y="sample", color="source", color_discrete_map={
+    fig = px.scatter(long_sag_df, x="timestamp", y="sample", color="source", color_discrete_map = {
     "planned": "#f39c12",  # orange
-    "tracked": "#2ecc71"  # greenish
-       },
+    "start": "#2ecc71",    # green
+    "end": "#3498db"       # blue
+},
                      symbol="source", )
 
     # Set the x axis over the whole day
