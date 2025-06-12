@@ -265,13 +265,14 @@ with st.expander("Data"):
 # Options to download/upload/delete data
 data_actions_expander = st.expander("Data actions")
 data_action_cols = data_actions_expander.columns(5)
-csv_data = get_plan_track_table().to_csv(index=False)
-data_action_cols[0].download_button("Download Backup",
+#csv_data = get_plan_track_table().to_csv(index=False)
+csv_data = st.session_state["total_sag_df"].to_csv(index=False)
+data_action_cols[0].download_button("Download Backup", disabled=True,
                                     file_name=f"scans_{datetime.now(ZoneInfo("Europe/Berlin")).strftime("%Y-%m-%d_%H-%M-%S")}.csv",
                                     data=csv_data, use_container_width=True)
 
 
-if data_action_cols[1].button("Upload Backup", use_container_width=True):
+if data_action_cols[1].button("Upload Backup", use_container_width=True, disabled=True):
     upload_backup()
 
 if data_action_cols[4].button("Delete All Data", use_container_width=True):
