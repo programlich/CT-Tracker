@@ -500,7 +500,10 @@ def sample20_countdown():
             future_scans = sample_20_planned_df[sample_20_planned_df["timestamp"] > now].sort_values("timestamp", ascending=True)
             #next_sample = future_scans["sample"].values[0]
             #next_sample = future_scans["sample"].values[0]
-            next_scan_time = future_scans["timestamp"].iloc[0]
+            if not future_scans.empty:
+                next_scan_time = future_scans["timestamp"].iloc[0]
+            else:
+                next_scan_time = None
         else:
             next_scan_time = None
 
@@ -539,7 +542,10 @@ def sample21_countdown():
             future_scans = sample_21_planned_df[sample_21_planned_df["timestamp"] > now].sort_values("timestamp", ascending=True)
 
             #next_sample = future_scans["sample"].values[0]
-            next_scan_time = future_scans["timestamp"].iloc[0]
+            if not future_scans.empty:
+                next_scan_time = future_scans["timestamp"].iloc[0]
+            else:
+                next_scan_time = None
         else:
             next_scan_time = None
         # next_sample_T = samples.samples[next_sample]["T"]

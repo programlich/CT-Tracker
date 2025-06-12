@@ -17,24 +17,24 @@ st.set_page_config(layout="wide")
 create_new_sag_in_db("sample20")
 create_new_sag_in_db("sample21")
 
-
-# Login functionality
-with open('.streamlit/users.yaml') as file:
-    config = yaml.load(file, Loader=SafeLoader)
-
-authenticator = stauth.Authenticate(
-    config['credentials'],
-    config['cookie']['name'],
-    config['cookie']['key'],
-    config['cookie']['expiry_days'],
-)
-
-if st.session_state["authentication_status"] is None:
-    try:
-        authenticator.login()
-    except Exception as e:
-        st.error(e)
-    st.stop()
+#
+# # Login functionality
+# with open('.streamlit/users.yaml') as file:
+#     config = yaml.load(file, Loader=SafeLoader)
+#
+# authenticator = stauth.Authenticate(
+#     config['credentials'],
+#     config['cookie']['name'],
+#     config['cookie']['key'],
+#     config['cookie']['expiry_days'],
+# )
+#
+# if st.session_state["authentication_status"] is None:
+#     try:
+#         authenticator.login()
+#     except Exception as e:
+#         st.error(e)
+#     st.stop()
 
 if "total_sag_df" not in st.session_state:
     st.session_state["total_sag_df"] = get_total_sag_df(["sample20", "sample21"])
