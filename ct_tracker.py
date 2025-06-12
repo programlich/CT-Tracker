@@ -14,6 +14,10 @@ from yaml.loader import SafeLoader
 
 st.set_page_config(layout="wide")
 
+create_new_sag_in_db("sample20")
+create_new_sag_in_db("sample21")
+
+
 # Login functionality
 with open('.streamlit/users.yaml') as file:
     config = yaml.load(file, Loader=SafeLoader)
@@ -32,56 +36,125 @@ if st.session_state["authentication_status"] is None:
         st.error(e)
     st.stop()
 
-# Get the complete plan_df from docs and save it to session state. Only reload, if the docs have been changed
-if "plan_track_df" not in st.session_state:
-    st.session_state["plan_track_df"] = format_plan_track_table()
-plan_track_df = st.session_state["plan_track_df"]
+if "total_sag_df" not in st.session_state:
+    st.session_state["total_sag_df"] = get_total_sag_df(["sample20", "sample21"])
+total_sag_df = st.session_state["total_sag_df"]
 
-if not plan_track_df.empty:
-    started_samples = plan_track_df.loc[plan_track_df["source"] == "planned", "sample"].unique().tolist()
-    tracked_samples = plan_track_df.loc[plan_track_df["source"] == "tracked", "sample"].unique().tolist()
-else:
-    started_samples = []
+if "long_sag_df" not in st.session_state:
+    st.session_state["long_sag_df"] = format_sag_df(total_sag_df)
+long_sag_df = st.session_state["long_sag_df"]
+
+# # Get the complete plan_df from docs and save it to session state. Only reload, if the docs have been changed
+# if "plan_track_df" not in st.session_state:
+#     st.session_state["plan_track_df"] = format_plan_track_table()
+# plan_track_df = st.session_state["plan_track_df"]
+#
+# if not plan_track_df.empty:
+#     started_samples = plan_track_df.loc[plan_track_df["source"] == "planned", "sample"].unique().tolist()
+#     tracked_samples = plan_track_df.loc[plan_track_df["source"] == "tracked", "sample"].unique().tolist()
+# else:
+#     started_samples = []
 
 # Widgets
 plot_container = st.container()
 widget_cols = st.columns(2)
-sample_container = widget_cols[0].container(border=True)
-countdown_container = widget_cols[1].container(border=True)
-selected_sample = sample_container.pills("Sample", options=["sample1", "sample2", "sample3", "sample4", "sample5", "sample6",
-                                                   "sample7", "sample8", "sample9"], selection_mode="single", )
-# widget_cols = sample_container.columns(1, vertical_alignment="bottom")
 
-# Handle non initialized samples
-if selected_sample not in started_samples and selected_sample:
-    if sample_container.button(f"Initialize experiment for {selected_sample} now", type="primary", use_container_width=True):
-        try:
-            add_plan_df_to_db(selected_sample)
-            # create_plan_df(f"{selected_sample}_plan")
-        # except gspread.exceptions.APIError:
-        except Exception as e:
-            # st.toast("Quota limit reached. Wait for a minute")
-            st.toast(e)
+# sample20
+sample20_container = widget_cols[0].container(border=True)
+sample20_container.write("### Sample20")
+sample20_cols = sample20_container.columns(2)
+init_interval_20_button = sample20_cols[0].button("Initialize new leaching interval", use_container_width=True)
+add_leaching_start_20_button = sample20_cols[0].button("Add leaching start", use_container_width=True)
+add_leaching_end_20_button = sample20_cols[0].button("Add leaching end", use_container_width=True)
 
-elif selected_sample in started_samples and selected_sample:
-    # date = widget_cols[0].date_input("Date", value="2025-06-10", format="DD.MM.YYYY")
-    # time = widget_cols[1].time_input("Time", step=60)
+def update_sag_state():
+    total_sag_df = get_total_sag_df(["sample20", "sample21"])
+    long_sag_df = format_sag_df(total_sag_df)
+    st.session_state["total_sag_df"] = total_sag_df
+    st.session_state["long_sag_df"] = long_sag_df
+    st.rerun()
 
-    # Add a given point of time to the track_df
-    if sample_container.button(f"Add scan to {selected_sample}", type="primary", use_container_width=True):
-        try:
-            # response = add_scan_to_track_df(f"{selected_sample}_track")
-            response = add_scan_to_db(f"{selected_sample}_track")
-            st.toast(response)
-        except gspread.exceptions.APIError:
-            st.toast("Quota limit reached. Wait for a minute")
+if init_interval_20_button:
+    start_next_leaching_interval("sample20")
+    update_sag_state()
 
-# Get the current state of data from the session state
-plan_track_df = st.session_state["plan_track_df"]
+if add_leaching_start_20_button:
+    add_leaching_start_time("sample20")
+    update_sag_state()
 
-if not plan_track_df.empty:
+if add_leaching_end_20_button:
+    add_leaching_end_time("sample20")
+    update_sag_state()
+
+with sample20_cols[1]:
+    sample20_countdown()
+
+sample21_container = widget_cols[1].container(border=True)
+sample21_container.write("### Sample21")
+sample21_cols = sample21_container.columns(2)
+init_interval_21_button = sample21_cols[0].button("Initialize new leaching interval", use_container_width=True, key="add_int_21")
+add_leaching_start_21_button = sample21_cols[0].button("Add leaching start", use_container_width=True, key="add_start_21")
+add_leaching_end_21_button = sample21_cols[0].button("Add leaching end", use_container_width=True, key="add_end_21")
+
+
+if init_interval_21_button:
+    start_next_leaching_interval("sample21")
+    update_sag_state()
+
+if add_leaching_start_21_button:
+    add_leaching_start_time("sample21")
+    update_sag_state()
+
+if add_leaching_end_21_button:
+    add_leaching_end_time("sample21")
+    update_sag_state()
+
+with sample21_cols[1]:
+    sample21_countdown()
+
+# sample_container = widget_cols[0].container(border=True)
+# countdown_container = widget_cols[1].container(border=True)
+# selected_sample = sample_container.pills("Sample", options=["sample1", "sample2", "sample3", "sample4", "sample5", "sample6",
+#                                                    "sample7", "sample8", "sample9"], selection_mode="single", )
+# # widget_cols = sample_container.columns(1, vertical_alignment="bottom")
+#
+# # Handle non initialized samples
+# if selected_sample not in started_samples and selected_sample:
+#     if sample_container.button(f"Initialize experiment for {selected_sample} now", type="primary", use_container_width=True):
+#         try:
+#             add_plan_df_to_db(selected_sample)
+#             # create_plan_df(f"{selected_sample}_plan")
+#         # except gspread.exceptions.APIError:
+#         except Exception as e:
+#             # st.toast("Quota limit reached. Wait for a minute")
+#             st.toast(e)
+#
+# elif selected_sample in started_samples and selected_sample:
+#     # date = widget_cols[0].date_input("Date", value="2025-06-10", format="DD.MM.YYYY")
+#     # time = widget_cols[1].time_input("Time", step=60)
+#
+#     # Add a given point of time to the track_df
+#     if sample_container.button(f"Add scan to {selected_sample}", type="primary", use_container_width=True):
+#         try:
+#             # response = add_scan_to_track_df(f"{selected_sample}_track")
+#             response = add_scan_to_db(f"{selected_sample}_track")
+#             st.toast(response)
+#         except gspread.exceptions.APIError:
+#             st.toast("Quota limit reached. Wait for a minute")
+#
+# # Get the current state of data from the session state
+# plan_track_df = st.session_state["plan_track_df"]
+
+
+
+if not long_sag_df.empty:
     # Create the plot
-    fig = px.scatter(plan_track_df, x="timestamp", y="sample", color="source", color_discrete_map={
+    # fig = px.scatter(plan_track_df, x="timestamp", y="sample", color="source", color_discrete_map={
+    # "planned": "#f39c12",  # orange
+    # "tracked": "#2ecc71"  # greenish
+    #    },
+    #                  symbol="source", )
+    fig = px.scatter(long_sag_df, x="timestamp", y="sample", color="source", color_discrete_map={
     "planned": "#f39c12",  # orange
     "tracked": "#2ecc71"  # greenish
        },
@@ -101,18 +174,18 @@ if not plan_track_df.empty:
          )
      )
 
-    # Sort the y axis according to the number of the sample
-    present_samples = (
-        plan_track_df["sample"]
-        .dropna()
-        .unique()
-        .tolist()
-    )
-    present_samples.sort(reverse=True)
-    fig.update_yaxes(
-        categoryorder="array",
-        categoryarray=present_samples
-    )
+    # # Sort the y axis according to the number of the sample
+    # present_samples = (
+    #     plan_track_df["sample"]
+    #     .dropna()
+    #     .unique()
+    #     .tolist()
+    # )
+    # present_samples.sort(reverse=True)
+    # fig.update_yaxes(
+    #     categoryorder="array",
+    #     categoryarray=present_samples
+    # )
 
     # Add time indicator with red horizontal line
     now = datetime.now(ZoneInfo("Europe/Berlin"))
@@ -161,32 +234,33 @@ if not plan_track_df.empty:
     # Show the plot
     plot_container.plotly_chart(fig, use_container_width=True, theme="streamlit")
 
-    with countdown_container:
-        next_scan_countdown()
-
-else:
-    countdown_container.info("No experiment initialized yet.")
+#     with countdown_container:
+#         next_scan_countdown()
+#
+# else:
+#     countdown_container.info("No experiment initialized yet.")
 
 st.divider()
 
 # Show sample info
-tabs = st.tabs(["Samples", "Data"])
-sample_container = tabs[0].container(border=False)
-sample_cols = sample_container.columns(3)
+# tabs = st.tabs(["Samples", "Data"])
+# sample_container = tabs[0].container(border=False)
+# sample_cols = sample_container.columns(3)
 
-for i, sample in enumerate(samples):
-
-    # Sample 1
-    sample_cols[i%3].container(border=True).write(f"""##### Sample {i+1}
-    - T: {samples[sample]["T"]}  
-    - Solution: {samples[sample]['solution']}  
-    - Profile: {samples[sample]['profile']}""")
+# for i, sample in enumerate(samples):
+#
+#     sample_cols[i%3].container(border=True).write(f"""##### Sample {i+1}
+#     - T: {samples[sample]["T"]}
+#     - Solution: {samples[sample]['solution']}
+#     - Profile: {samples[sample]['profile']}""")
 
 # Show all data as dataframe
-unformatted_plan_track_df = get_plan_track_table()
-if "id" in unformatted_plan_track_df.columns:
-    unformatted_plan_track_df.drop(columns=["id"], inplace=True)
-tabs[1].container().dataframe(unformatted_plan_track_df, hide_index=True)
+# unformatted_plan_track_df = get_plan_track_table()
+# if "id" in unformatted_plan_track_df.columns:
+#     unformatted_plan_track_df.drop(columns=["id"], inplace=True)
+# tabs[1].container().dataframe(unformatted_plan_track_df, hide_index=True)
+with st.expander("Data"):
+    st.dataframe(total_sag_df, hide_index=True)
 
 # Options to download/upload/delete data
 data_actions_expander = st.expander("Data actions")

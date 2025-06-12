@@ -50,6 +50,20 @@ def get_plan_track_table():
     return  plan_track_df
 
 
+def get_db_table_as_df(sample):
+    connection = establish_db_connection()
+    try:
+        plan_track_df = pd.read_sql(f"SELECT * FROM {sample}", connection)
+    except (pd.io.sql.DatabaseError, sqlite3.OperationalError) as e:
+        if "no such table" in str(e).lower():
+            plan_track_df = None
+        else:
+            raise  # re-raise if it's a different error
+    finally:
+        connection.close()
+    return plan_track_df
+
+
 def format_plan_track_table():
     connection = establish_db_connection()
 
@@ -78,6 +92,224 @@ def format_plan_track_table():
 
     connection.close()
     return long_plan_track_df
+
+
+def create_new_sag_in_db(sag_sample):
+    # connect to db
+    connection = establish_db_connection()
+    cursor = connection.cursor()
+
+    # get sample information
+    sample_info = samples.sag_samples[sag_sample]
+    interval_list = sample_info["intervals"]
+    T_list = sample_info["T"]
+
+    # Create the table with correct column types
+    cursor.execute(f'''
+    CREATE TABLE IF NOT EXISTS {sag_sample} (
+        interval INTEGER,
+        t_start_target TEXT,
+        t_end_target TEXT,
+        t_start_is TEXT,
+        t_end_is TEXT,
+        T INTEGER
+    )
+    ''')
+
+    # Insert values into the table: only 'interval' is set, others remain NULL
+    data_to_insert = list(zip(interval_list, T_list))
+    cursor.executemany(f'''
+    INSERT INTO {sag_sample} (interval, t_start_target, t_end_target, t_start_is, t_end_is, T)
+    VALUES (?, NULL, NULL, NULL, NULL, ?)
+    ''', data_to_insert)
+
+    # Commit and close
+    connection.commit()
+    connection.close()
+
+
+def start_next_leaching_interval(sag_sample):
+    # connect to db
+    connection = establish_db_connection()
+    cursor = connection.cursor()
+
+    # Get the ROWID and interval of the first row with NULL t_start_target
+    cursor.execute(f'''
+        SELECT ROWID, interval FROM {sag_sample}
+        WHERE t_start_target IS NULL
+        ORDER BY ROWID ASC
+        LIMIT 1
+    ''')
+    result = cursor.fetchone()
+
+    if result is None:
+        connection.close()
+        return None  # No more intervals to process
+
+    rowid, next_interval = result
+
+    # Define the scantimes
+    start_time = datetime.now(ZoneInfo("Europe/Berlin")) # Experiment starts now
+    end_time = start_time+timedelta(minutes=next_interval) # First 15min -> scan every 3min
+    start_time_string = start_time.strftime("%d.%m.%Y %H:%M:%S%z")
+    end_time_string = end_time.strftime("%d.%m.%Y %H:%M:%S%z")
+
+
+    # Update the table with new timestamps
+    cursor.execute(f'''
+        UPDATE {sag_sample}
+        SET t_start_target = ?, t_end_target = ?
+        WHERE ROWID = ?
+    ''', (start_time_string, end_time_string, rowid))
+
+    connection.commit()
+    connection.close()
+
+
+def add_leaching_start_time(sample):
+    # Connect to DB
+    connection = establish_db_connection()
+    cursor = connection.cursor()
+
+    # Get the ROWID of the first row with NULL t_start_is
+    cursor.execute(f'''
+        SELECT ROWID FROM {sample}
+        WHERE t_start_is IS NULL
+        ORDER BY ROWID ASC
+        LIMIT 1
+    ''')
+    result = cursor.fetchone()
+
+    if result is None:
+        connection.close()
+        return None  # No unmarked rows found
+
+    rowid = result[0]
+
+    # Generate the current timestamp
+    timestamp = datetime.now(ZoneInfo("Europe/Berlin")).strftime("%d.%m.%Y %H:%M:%S%z")
+
+    # Update the row with the timestamp
+    cursor.execute(f'''
+        UPDATE {sample}
+        SET t_start_is = ?
+        WHERE ROWID = ?
+    ''', (timestamp, rowid))
+
+    connection.commit()
+    connection.close()
+
+    return {
+        "rowid": rowid,
+        "t_start_is": timestamp
+    }
+
+
+def add_leaching_end_time(sample):
+    # Connect to DB
+    connection = establish_db_connection()
+    cursor = connection.cursor()
+
+    # Get the ROWID of the first row with NULL t_start_is
+    cursor.execute(f'''
+        SELECT ROWID FROM {sample}
+        WHERE t_end_is IS NULL
+        ORDER BY ROWID ASC
+        LIMIT 1
+    ''')
+    result = cursor.fetchone()
+
+    if result is None:
+        connection.close()
+        return None  # No unmarked rows found
+
+    rowid = result[0]
+
+    # Generate the current timestamp
+    timestamp = datetime.now(ZoneInfo("Europe/Berlin")).strftime("%d.%m.%Y %H:%M:%S%z")
+
+    # Update the row with the timestamp
+    cursor.execute(f'''
+        UPDATE {sample}
+        SET t_end_is = ?
+        WHERE ROWID = ?
+    ''', (timestamp, rowid))
+
+    connection.commit()
+    connection.close()
+
+    return {
+        "rowid": rowid,
+        "t_end_is": timestamp
+    }
+
+
+def get_total_sag_df(table_names):
+
+    connection = establish_db_connection()
+
+    try:
+        # Read from sample20 and tag source
+        df1 = pd.read_sql("SELECT * FROM sample20", connection)
+        df1["sample"] = "sample20"
+
+        # Read from sample21 and tag source
+        df2 = pd.read_sql("SELECT * FROM sample21", connection)
+        df2["sample"] = "sample21"
+
+        # Concatenate vertically
+        combined_df = pd.concat([df1, df2], axis=0, ignore_index=True)
+
+    except (pd.io.sql.DatabaseError, sqlite3.OperationalError) as e:
+        print(f"Error reading tables: {e}")
+        combined_df = None
+
+    finally:
+        connection.close()
+
+    return combined_df
+
+
+def format_sag_df(sag_df):
+
+    if not sag_df.empty:
+        time_cols = ["t_start_target", "t_end_target", "t_start_is", "t_end_is"]
+        time_format = "%d.%m.%Y %H:%M:%S%z"
+        for col in time_cols:
+            sag_df[col] = pd.to_datetime(sag_df[col], format=time_format, errors="coerce",
+                                              utc=True).dt.tz_convert("Europe/Berlin")
+
+        # Drop all T and interval cols
+        sag_df = sag_df[["sample", "t_start_target", "t_end_target", "t_start_is", "t_end_is"]]
+
+        # Reshape the df into long format
+        # Define columns to melt
+        timestamp_cols = ["t_start_is", "t_end_is", "t_start_target", "t_end_target"]
+
+        # Melt the DataFrame
+        long_sag_df = pd.melt(
+            sag_df,
+            id_vars=["sample"],
+            value_vars=timestamp_cols,
+            var_name="source",
+            value_name="timestamp"
+        )
+
+        if not long_sag_df.empty:
+            long_sag_df["source"] = long_sag_df["source"].apply(lambda s: "planned" if "target" in s else "tracked" if "is" in s else None)
+
+            # # Split the sample_name into 'sample' and 'source' -> plan/track
+            # long_sag_df["source"] = long_sag_df["sample"].apply(
+            #     lambda x: "planned" if "_plan" in x else "tracked"
+            # )
+            # long_sag_df["sample"] = long_sag_df["sample"].str.replace("_plan", "")
+            # long_sag_df["sample"] = long_sag_df["sample"].str.replace("_track", "")
+            long_sag_df.sort_values(by="timestamp", inplace=True)
+
+        return long_sag_df
+
+    else:
+        return None
 
 
 # Add a plan_df to the db as a new column
@@ -250,6 +482,88 @@ def next_scan_countdown():
 
         else:
             st.success("✅ No upcoming scans found.")
+
+
+@st.fragment(run_every="1s")
+def sample20_countdown():
+    # Get current time
+    now = datetime.now(ZoneInfo("Europe/Berlin"))
+
+    # Get all future planned scan times
+    if "long_sag_df" in st.session_state:
+
+        total_sag_df = st.session_state["long_sag_df"]
+        sample_20_df = total_sag_df[total_sag_df["sample"]=="sample20"]
+        sample_20_planned_df = sample_20_df[sample_20_df["source"] == "planned"]
+
+        if not sample_20_planned_df["timestamp"].isna().all():
+            future_scans = sample_20_planned_df[sample_20_planned_df["timestamp"] > now].sort_values("timestamp", ascending=True)
+            #next_sample = future_scans["sample"].values[0]
+            #next_sample = future_scans["sample"].values[0]
+            next_scan_time = future_scans["timestamp"].iloc[0]
+        else:
+            next_scan_time = None
+
+        # next_sample_T = samples.samples[next_sample]["T"]
+        # next_sample_solution = samples.samples[next_sample]["solution"]
+        # next_sample_profile = samples.samples[next_sample]["profile"]
+
+        if next_scan_time:
+            time_diff = next_scan_time - now
+            mins, secs = divmod(int(time_diff.total_seconds()), 60)
+
+            st.error(f"#  {mins:02d}:{secs:02d}")
+
+            # cols[1].info(f"""
+            # - T: {next_sample_T}
+            # - Solution: {next_sample_solution}
+            # - Profile: {next_sample_profile}""")
+
+            if (mins <= 5) and (mins >=4) and (secs%5 == 0):
+                st.balloons()
+
+        else:
+            st.success("✅ No upcoming events found.")
+
+def sample21_countdown():
+    # Get current time
+    now = datetime.now(ZoneInfo("Europe/Berlin"))
+
+    # Get all future planned scan times
+    if "long_sag_df" in st.session_state:
+
+        total_sag_df = st.session_state["long_sag_df"]
+        sample_21_df = total_sag_df[total_sag_df["sample"]=="sample21"]
+        sample_21_planned_df = sample_21_df[sample_21_df["source"] == "planned"]
+        if not sample_21_planned_df["timestamp"].isna().all():
+            future_scans = sample_21_planned_df[sample_21_planned_df["timestamp"] > now].sort_values("timestamp", ascending=True)
+
+            #next_sample = future_scans["sample"].values[0]
+            next_scan_time = future_scans["timestamp"].iloc[0]
+        else:
+            next_scan_time = None
+        # next_sample_T = samples.samples[next_sample]["T"]
+        # next_sample_solution = samples.samples[next_sample]["solution"]
+        # next_sample_profile = samples.samples[next_sample]["profile"]
+
+
+        if next_scan_time:
+            time_diff = next_scan_time - now
+            mins, secs = divmod(int(time_diff.total_seconds()), 60)
+
+            st.error(f"#  {mins:02d}:{secs:02d}")
+
+            # cols[1].info(f"""
+            # - T: {next_sample_T}
+            # - Solution: {next_sample_solution}
+            # - Profile: {next_sample_profile}""")
+
+            if (mins <= 5) and (mins >=4) and (secs%5 == 0):
+                st.balloons()
+
+        else:
+            st.success("✅ No upcoming events found.")
+
 
 
 @st.dialog("Upload Backup")
